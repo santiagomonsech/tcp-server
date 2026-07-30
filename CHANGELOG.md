@@ -3,4 +3,4 @@
 ---
 
 ## [Unreleased]
-- Nada implementado todavía — scaffold del proyecto.
+- Nothing implemented yet — Project scaffold

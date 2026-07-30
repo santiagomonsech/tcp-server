@@ -1,60 +1,88 @@
 # tcp-server
 
-> **Parte del roadmap:** Fase 1 · Track C (Systems Programming)
-> **CS:APP:** Cap 11 — Network Programming
-> **Lenguaje:** C
-
-Un servidor HTTP/1.0 construido desde sockets raw en C — sin frameworks, sin libcurl del lado servidor. El objetivo es entender qué hace el kernel por vos en cada paso de `socket → bind → listen → accept`, y qué significa realmente "parsear" un protocolo de texto como HTTP.
+An HTTP/1.0 server built from raw sockets in C — no frameworks, no libcurl on the server side.
 
 ---
 
-## Milestones
+## Why I built this
 
-- [ ] **M1:** Accept loop básico — el server escucha en un puerto, acepta una conexión, la cierra sin responder nada. Verificable con `nc localhost PUERTO`.
-- [ ] **M2:** Parseo de una request HTTP/1.0 real — request line (`GET /path HTTP/1.0`) + headers mínimos.
-- [ ] **M3:** Response mínima — `200 OK`, `Content-Length`, body fijo. Verificable con `curl localhost:PUERTO`.
-- [ ] **M4 (final):** Manejar conexiones concurrentes (fork-per-connection) y poder explicar el trade-off contra un accept loop puramente secuencial — anclado a OSTEP módulo 1.1 (procesos y scheduling).
+I want to understand what actually happens between a raw TCP connection and an HTTP response — what the kernel does at each step of `socket → bind → listen → accept`, and what "parsing" really means for a text protocol like HTTP, without a framework doing it for me.
 
-## Estructura
+---
+
+## How it works
+
+Every HTTP/1.0 request goes through the same fixed pipeline: a listening socket accepts a new connection, the request is read and parsed into a request line plus headers, a response is built and written back, and the connection is closed. Sockets, parsing and formatting are all done by hand so it's clear exactly what a framework like Flask/Express replaces when you don't think twice about using it.
+
+### Accept loop
+
+The server creates a listening socket (`socket` → `bind` → `listen`), then blocks on `accept` waiting for an incoming connection. Each `accept` call returns a *new* file descriptor for that specific connection — the original listening socket keeps waiting for the next one. In the first milestone this loop is sequential: one connection is fully handled before `accept` is called again.
+
+### Request parsing
+
+Once a connection is accepted, the server reads raw bytes off the socket until it has a full HTTP/1.0 request: a request line (`GET /path HTTP/1.0`) followed by a minimal set of headers, terminated by `\r\n\r\n`. There's no assumption that a single `read()` call returns the whole request — TCP is a byte stream, not a message protocol, so parsing has to handle a request arriving in pieces.
+
+### Response writing
+
+The server writes back a status line (`HTTP/1.0 200 OK`), a `Content-Length` header, and a fixed body. HTTP/1.0 has no chunked encoding, so `Content-Length` is what lets the client know exactly when the response ends — and no keep-alive, so the connection closes right after.
 
 ```
-tcp-server/
-├── README.md           ← este archivo
-├── CONTEXT.md          ← vocabulario del dominio y decisiones de arquitectura
-├── CLAUDE.md           ← instrucciones para Claude Code en este proyecto
-├── CHANGELOG.md
-├── src/                ← código fuente
-├── tests/               ← tests
-├── notes/               ← notas de sesión (generadas por /recap)
-└── docs/
-    └── architecture.md ← diseño del sistema, decisiones tomadas
+                 +--------------+
+  TCP connection | accept loop  |  <- socket/bind/listen/accept
+                 +------+-------+
+                        | connection fd
+                        v
+                 +--------------+
+                 | request      |  <- read() until \r\n\r\n,
+                 | parser       |     parse request line + headers
+                 +------+-------+
+                        | struct http_request
+                        v
+                 +--------------+
+                 | response     |  <- status line + Content-Length + body
+                 | writer       |
+                 +------+-------+
+                        |
+                        v
+                    close(fd)
 ```
 
-## Cómo correr
+---
 
-Todavía no hay código — se arranca con M1. Una vez que exista un `Makefile`:
+## Design decisions
+
+**Why blocking I/O instead of epoll/select from the start?**
+Because the goal of M1-M3 is to understand what a single connection actually requires at the syscall level — one `accept`, one `read`, one `write`, one `close` — before adding the complexity of multiplexing. Non-blocking I/O and event loops are a separate topic (Phase 2 of the curriculum, `redis-lite`), not something to bring in early just because it's "more correct" in production.
+
+**Why HTTP/1.0 instead of 1.1?**
+HTTP/1.0 has no keep-alive and no chunked transfer encoding, which means every request/response cycle is a clean, self-contained unit: one connection, one request, one response, `Content-Length` always known up front. That's the smallest version of the protocol that's still real HTTP, which makes it the right starting point before adding the extra state 1.1 needs (persistent connections, chunked bodies).
+
+---
+
+## Current status
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| M1 | Basic accept loop — listens on a port, accepts one connection, closes it without responding | ⬜ Planned |
+| M2 | Parse a real HTTP/1.0 request — request line + minimal headers | ⬜ Planned |
+| M3 | Minimal response — `200 OK`, `Content-Length`, fixed body | ⬜ Planned |
+| M4 | Concurrent connections (fork-per-connection) vs. a purely sequential accept loop | ⬜ Planned |
+
+---
+
+## Build and run
+
+No code yet — starts with M1. Once a `Makefile` exists:
 
 ```bash
 make           # build
 make test      # build + run tests
-make asan      # build con AddressSanitizer
+make asan      # build with AddressSanitizer
 ```
 
-## Comandos disponibles en este proyecto
+**Requirements:** gcc
 
-| Comando | Descripción |
-|---------|-------------|
-| `/check` | Compila, corre tests, verifica con valgrind/sanitizers |
-| `/explore` | Explora el sistema operativo relacionado con el tema activo (ej. `strace -e trace=network`, `ss -tlnp`) |
-| `/next` | Próximo paso concreto del proyecto |
-| `/recap` | Escribe notas de la sesión actual en notes/ |
-
-## Agentes útiles para este proyecto
-
-- `@debugger` — cuando algo explota, gdb/strace guiado
-- `@reviewer` — para revisar el código en cualquier momento
-- `@quiz` — para testear comprensión después de un milestone
-- `@explainer` — cuando un concepto no está claro
+---
 
 ## Reference
 
