@@ -63,7 +63,7 @@ HTTP/1.0 has no keep-alive and no chunked transfer encoding, which means every r
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| M1 | Basic accept loop — listens on a port, accepts one connection, closes it without responding | ⬜ Planned |
+| M1 | Basic accept loop — listens on a port, accepts one connection, closes it without responding | Completed |
 | M2 | Parse a real HTTP/1.0 request — request line + minimal headers | ⬜ Planned |
 | M3 | Minimal response — `200 OK`, `Content-Length`, fixed body | ⬜ Planned |
 | M4 | Concurrent connections (fork-per-connection) vs. a purely sequential accept loop | ⬜ Planned |
